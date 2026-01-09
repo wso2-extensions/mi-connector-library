@@ -2,9 +2,9 @@ name: Update Connector Dashboard
 
 on:
   workflow_dispatch:
-  schedule:
-    # Run everyday at 8:30 AM and 8:30 PM UTC
-    - cron: '30 8,20 * * *'
+#  schedule:
+#    # Run everyday at 8:30 AM and 8:30 PM UTC
+#    - cron: '30 8,20 * * *'
   # push:
   #     branches:
   #       - main
