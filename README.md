@@ -26,7 +26,7 @@ WSO2 code is distributed under [Apache License 2.0](https://www.apache.org/licen
 
 ## Useful Links
 
-- Access the WSO2 Connector Store [here](https://store.wso2.com/store/assets/esbconnector/list).
+- Access the WSO2 Connector Store [here](https://store.wso2.com/?page=1&product=Micro+Integrator).
 - For documentation, visit [WSO2 MI Connector Documentation](https://mi.docs.wso2.com/en/latest/reference/connectors/connectors-overview/).
 - For technical queries, visit the [WSO2 Community](https://wso2.com/community/).
 
