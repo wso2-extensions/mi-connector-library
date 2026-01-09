@@ -51,12 +51,6 @@ type MIConnector record {|
     ConnectorMeta? meta;
 |};
 
-# Represents a list of connectors
-#
-# + mi_connectors - Array of MI connectors
-type ConnectorList record {|
-    MIConnector[] mi_connectors;
-|};
 
 # Represents a workflow badge
 #

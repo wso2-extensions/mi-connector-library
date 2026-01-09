@@ -71,8 +71,16 @@ jobs:
       - name: Approve PR
         if: ${{ steps.commitFiles.outputs.hasChanged == 'true' }}
         run: |
-          sleep 5
-          gh pr review --approve ${{ steps.createPR.outputs.prUrl }}
+          max_attempts=5
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if gh pr review --approve ${{ steps.createPR.outputs.prUrl }}; then
+              break
+            fi
+            echo "PR not ready for approval yet. Retry $attempt/$max_attempts..."
+            attempt=$((attempt + 1))
+            sleep 10
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.REVIEWER_BOT_TOKEN }}
 

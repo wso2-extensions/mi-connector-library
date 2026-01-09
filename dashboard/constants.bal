@@ -19,16 +19,16 @@ const WSO2_EXTENSIONS_ORG = "wso2-extensions";
 
 // Branches
 const BRANCH_MAIN = "main";
-const BRANCH_MASTER = "master";
+
 
 // Links
-const WSO2_EXTENSIONS_ORG_URL = "https://github.com/wso2-extensions";
+
 const GITHUB_RAW_URL = "https://raw.githubusercontent.com";
 const GITHUB_BADGE_URL = "https://img.shields.io/github";
 
 // Colors
 const BADGE_COLOR_GREEN = "30c955";
-const BADGE_COLOR_YELLOW = "yellow";
+
 
 // File Paths
 const README_FILE = "../README.md";
@@ -39,8 +39,9 @@ const CONNECTOR_META_FILE = ".connector-store/meta.json";
 const GITHUB_TOKEN_ENV = "GITHUB_TOKEN";
 
 // Misc
-const ENCODING = "UTF-8";
+
 const NA_BADGE = "https://img.shields.io/badge/-N%2FA-yellow";
+// Reserved for future use to indicate disabled connectors/repositories in the dashboard.
 const DISABLED_BADGE = "https://img.shields.io/badge/-disabled-red";
 
 // README Contents
