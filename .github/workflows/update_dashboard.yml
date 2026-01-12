@@ -5,11 +5,6 @@ on:
 #  schedule:
 #    # Run everyday at 8:30 AM and 8:30 PM UTC
 #    - cron: '30 8,20 * * *'
-#  push:
-#    branches:
-#      - main
-#    paths:
-#      - 'dashboard/resources/connector_list.json'
 
 jobs:
   update_dashboard:
@@ -41,12 +36,11 @@ jobs:
       - name: Commit and Push
         run: |
           git add -u
-          git add dashboard/resources/connector_list.json
           if git diff-index --quiet HEAD --;
           then
               echo "No changes to commit"
           else
-              git commit -m "[AUTOMATED] Update the connector dashboard [skip ci]"
+              git commit -m "[AUTOMATED] Update the connector dashboard"
               git push origin ${{ github.ref_name }}
           fi
         env:
