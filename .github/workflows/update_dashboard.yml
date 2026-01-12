@@ -5,11 +5,11 @@ on:
 #  schedule:
 #    # Run everyday at 8:30 AM and 8:30 PM UTC
 #    - cron: '30 8,20 * * *'
-  # push:
-  #     branches:
-  #       - main
-  #     paths:
-  #       - 'dashboard/resources/connector_list.json'
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      - 'dashboard/resources/connector_list.json'
 
 jobs:
   update_dashboard:
@@ -30,8 +30,6 @@ jobs:
         run: |
           git config --global user.name ${{ secrets.WSO2_INTEGRATION_BOT_USERNAME }}
           git config --global user.email ${{ secrets.WSO2_INTEGRATION_BOT_EMAIL }}
-          git pull
-          git checkout -b update-connector-dashboard
 
       - name: Update the Dashboard
         run: |
@@ -40,73 +38,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.WSO2_INTEGRATION_BOT_TOKEN }}
 
-      - name: Commit Files
-        id: commitFiles
+      - name: Commit and Push
         run: |
           git add -u
           git add dashboard/resources/connector_list.json
           if git diff-index --quiet HEAD --;
           then
-              echo "hasChanged=false" >> $GITHUB_OUTPUT
+              echo "No changes to commit"
           else
-              git commit -m "[AUTOMATED] Update the connector dashboard"
-              echo "hasChanged=true" >> $GITHUB_OUTPUT
+              git commit -m "[AUTOMATED] Update the connector dashboard [skip ci]"
+              git push origin ${{ github.ref_name }}
           fi
-
-      - name: Push Results
-        if: ${{ steps.commitFiles.outputs.hasChanged == 'true' }}
-        run: git push origin "update-connector-dashboard"
-        env:
-          GITHUB_TOKEN: ${{ secrets.WSO2_INTEGRATION_BOT_TOKEN }}
-
-      - name: Create Pull Request to Update the Dashboard
-        id: createPR
-        if: ${{ steps.commitFiles.outputs.hasChanged == 'true' }}
-        run: |
-          PR_URL=$(gh pr create --title "[Automated] Update the MI Connector Dashboard" --body "Updating the MI Connector library dashboard with latest changes" --base ${{ github.ref_name }} --head update-connector-dashboard)
-          echo "prUrl=$PR_URL" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.WSO2_INTEGRATION_BOT_TOKEN }}
-
-      - name: Approve PR
-        if: ${{ steps.commitFiles.outputs.hasChanged == 'true' }}
-        run: |
-          max_attempts=5
-          attempt=1
-          while [ "$attempt" -le "$max_attempts" ]; do
-            if gh pr review --approve ${{ steps.createPR.outputs.prUrl }}; then
-              break
-            fi
-            echo "PR not ready for approval yet. Retry $attempt/$max_attempts..."
-            attempt=$((attempt + 1))
-            sleep 10
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.REVIEWER_BOT_TOKEN }}
-
-      - name: Merge PR
-        if: ${{ steps.commitFiles.outputs.hasChanged == 'true' }}
-        run: |
-          checkCount="0"
-          maxAttempts="30"
-          attempt="0"
-          while [ "$checkCount" != "1" ] && [ "$attempt" -lt "$maxAttempts" ]
-          do
-            sleep 20
-            attempt=$((attempt + 1))
-            checkCount=$(gh pr status --jq '[.currentBranch.statusCheckRollup[] | select((.conclusion=="SUCCESS") and ((.name=="Build")))] | length' --json statusCheckRollup || echo "0")
-            failedCount=$(gh pr status --jq '[.currentBranch.statusCheckRollup[] | select((.conclusion=="FAILURE") and ((.name=="Build")))] | length' --json statusCheckRollup || echo "0")
-            if [[ "$failedCount" != "0" ]]
-            then
-              echo "PR Build has Failed"
-              exit 1
-            fi
-          done
-          if [ "$attempt" -ge "$maxAttempts" ]; then
-            echo "Timeout waiting for checks to pass"
-            exit 1
-          fi
-          sleep 20
-          gh pr merge --merge --delete-branch
         env:
           GITHUB_TOKEN: ${{ secrets.WSO2_INTEGRATION_BOT_TOKEN }}
