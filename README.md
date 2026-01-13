@@ -16,10 +16,6 @@ WSO2 thrives on its open-source community. If you're interested in contributing,
 
 Take a look at our issue tracker for opportunities to contribute that align with your interests. We eagerly anticipate your contributions.
 
-## Code of Conduct
-
-All contributors are encouraged to follow the [WSO2 Code of Conduct](https://wso2.com/code-of-conduct).
-
 ## License
 
 WSO2 code is distributed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

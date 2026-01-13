@@ -153,13 +153,15 @@ jobs:
         run: |
           REPO_FULL_NAME="${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }}"
           BRANCH_NAME="${{ steps.vars.outputs.BRANCH_NAME }}"
-          
-          # Clone the target repository
+
           echo "Cloning repository: $REPO_FULL_NAME"
-          git clone "https://x-access-token:${{ env.GH_TOKEN }}@github.com/${REPO_FULL_NAME}.git" target-repo
+          gh repo clone "$REPO_FULL_NAME" target-repo
           
           cd target-repo
           
+          # Configure git to use gh for authentication (avoids embedding tokens in URLs)
+          gh auth setup-git
+
           # Check if main branch exists, if not create it
           if ! git rev-parse --verify origin/main &>/dev/null; then
             echo "Creating initial main branch"

@@ -177,12 +177,15 @@ jobs:
           
           # Clone target repository
           echo "Cloning repository: $TARGET_REPO"
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git" target-repo || {
+          gh repo clone "$TARGET_REPO" target-repo || {
             echo "Failed to clone target repository. Make sure it exists and you have access."
             exit 1
           }
           
           cd target-repo
+          
+          # Configure git to use gh for authentication (avoids embedding tokens in URLs)
+          gh auth setup-git
           
           # Check if main branch exists, if not create it
           if ! git rev-parse --verify origin/main &>/dev/null; then
