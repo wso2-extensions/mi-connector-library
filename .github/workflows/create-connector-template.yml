@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       connector_name:
-        description: 'Connector name (e.g., salesforce, slack, jira) - lowercase, alphanumeric with hyphens only'
+        description: 'Connector name (e.g., salesforce, slack, jira) - lowercase, alphanumeric with hyphens and dots only'
         required: true
         type: string
       connector_display_name:
@@ -71,20 +71,11 @@ jobs:
         run: |
           CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
           
-          # Validate connector name format (lowercase, alphanumeric, hyphens only)
-          if [[ ! "$CONNECTOR_NAME" =~ ^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$ ]]; then
-            echo "::error::Invalid connector name: '$CONNECTOR_NAME'. Must be lowercase, start with a letter, and contain only letters, numbers, and hyphens."
+          # Validate connector name format (lowercase, alphanumeric, hyphens, and dots only)
+          if [[ ! "$CONNECTOR_NAME" =~ ^[a-z][a-z0-9.-]*[a-z0-9]$|^[a-z]$ ]]; then
+            echo "::error::Invalid connector name: '$CONNECTOR_NAME'. Must be lowercase, start with a letter, and contain only letters, numbers, hyphens, and dots."
             exit 1
           fi
-          
-          # Check for reserved names
-          RESERVED_NAMES=("test" "example" "sample" "template" "skeleton")
-          for reserved in "${RESERVED_NAMES[@]}"; do
-            if [[ "$CONNECTOR_NAME" == "$reserved" ]]; then
-              echo "::error::Connector name '$CONNECTOR_NAME' is reserved and cannot be used."
-              exit 1
-            fi
-          done
           
           echo "Input validation passed"
           echo "validated=true" >> $GITHUB_OUTPUT
