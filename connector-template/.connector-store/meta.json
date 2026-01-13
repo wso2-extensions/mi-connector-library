@@ -1,0 +1,14 @@
+{
+    "name": "{{CONNECTOR_DISPLAY_NAME}}",
+    "owner": "WSO2",
+    "product": "MI",
+    "category": "{{CONNECTOR_CATEGORY}}",
+    "documentationUrl": "https://mi.docs.wso2.com/en/4.4.0/",
+    "mavenGroupId": "org.wso2.integration.connector",
+    "mavenArtifactId": "mi-connector-{{CONNECTOR_NAME_LOWER}}",
+    "description": "{{CONNECTOR_DESCRIPTION}}",
+    "status": "Active",
+    "rank": 5,
+    "type": "Connector",
+    "releases": []
+}

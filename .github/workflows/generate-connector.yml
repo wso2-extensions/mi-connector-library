@@ -1,0 +1,394 @@
+name: Generate MI Connector
+
+on:
+  workflow_dispatch:
+    inputs:
+      connector_name:
+        description: 'Ballerina connector name (e.g., salesforce, twilio)'
+        required: true
+        type: string
+      target_org:
+        description: 'Target GitHub organization'
+        required: true
+        default: 'wso2-extensions'
+        type: string
+      target_repo_name:
+        description: 'Target repository name (e.g., mi-connector-salesforce)'
+        required: true
+        type: string
+      release_version:
+        description: 'Release version to set in pom.xml (e.g., 1.0.0)'
+        required: false
+        type: string
+
+  # Support reusable workflow calls from other repositories
+  workflow_call:
+    inputs:
+      connector_name:
+        description: 'Ballerina connector name (e.g., salesforce, twilio)'
+        required: true
+        type: string
+      target_org:
+        description: 'Target GitHub organization'
+        required: false
+        type: string
+        default: 'wso2-extensions'
+      target_repo_name:
+        description: 'Target repository name (e.g., mi-connector-salesforce)'
+        required: true
+        type: string
+      release_version:
+        description: 'Release version to set in pom.xml (e.g., 1.0.0)'
+        required: false
+        type: string
+    secrets:
+      BOT_TOKEN:
+        description: 'GitHub token with repo permissions'
+        required: true
+      BOT_USERNAME:
+        description: 'Bot username for git commits'
+        required: true
+      BOT_EMAIL:
+        description: 'Bot email for git commits'
+        required: true
+
+# Prevent concurrent runs for the same connector
+concurrency:
+  group: generate-connector-${{ inputs.connector_name || github.event.inputs.connector_name }}
+  cancel-in-progress: false
+
+jobs:
+  generate-connector:
+    runs-on: ubuntu-latest
+    env:
+      # Normalize inputs between workflow_dispatch and workflow_call
+      CONNECTOR_NAME_INPUT: ${{ inputs.connector_name || github.event.inputs.connector_name }}
+      TARGET_REPO_NAME_INPUT: ${{ inputs.target_repo_name || github.event.inputs.target_repo_name }}
+      TARGET_ORG_INPUT: ${{ inputs.target_org || github.event.inputs.target_org }}
+      RELEASE_VERSION_INPUT: ${{ inputs.release_version || github.event.inputs.release_version }}
+      # Use appropriate token based on trigger type
+      GH_TOKEN: ${{ secrets.BOT_TOKEN || secrets.WSO2_INTEGRATION_BOT_TOKEN }}
+      GIT_USER_NAME: ${{ secrets.BOT_USERNAME || secrets.WSO2_INTEGRATION_BOT_USERNAME }}
+      GIT_USER_EMAIL: ${{ secrets.BOT_EMAIL || secrets.WSO2_INTEGRATION_BOT_EMAIL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 21.0.3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Get Ballerina Version
+        run: |
+          BAL_VERSION=$(grep -w 'ballerinaLangVersion' gradle.properties | cut -d= -f2)
+          if [ -z "$BAL_VERSION" ]; then
+            BAL_VERSION="latest"
+          fi
+          echo "BAL_VERSION=$BAL_VERSION" >> $GITHUB_ENV
+          echo "Ballerina Version: $BAL_VERSION"
+
+      - name: Set Up Ballerina
+        uses: ballerina-platform/setup-ballerina@v1.1.3
+        with:
+          version: ${{ env.BAL_VERSION }}
+
+      - name: Pull mi-module-gen tool
+        run: bal tool pull mi-module-gen
+
+      - name: Pull connector from Ballerina Central
+        run: bal pull ballerinax/${{ env.CONNECTOR_NAME_INPUT }}
+
+      - name: Find connector path and generate MI module
+        id: generate
+        run: |
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          BALLERINA_HOME="$HOME/.ballerina"
+          REPO_PATH="$BALLERINA_HOME/repositories/central.ballerina.io/bala/ballerinax/$CONNECTOR_NAME"
+          
+          echo "Looking for connector at: $REPO_PATH"
+          
+          if [ ! -d "$REPO_PATH" ]; then
+            echo "Error: Connector directory not found at $REPO_PATH"
+            exit 1
+          fi
+          
+          # Find the latest version folder
+          LATEST_VERSION=$(ls -v "$REPO_PATH" | tail -n 1)
+          echo "Latest version found: $LATEST_VERSION"
+          
+          VERSION_PATH="$REPO_PATH/$LATEST_VERSION"
+          
+          # Find java21 or any available platform folder
+          if [ -d "$VERSION_PATH/java21" ]; then
+            CONNECTOR_PATH="$VERSION_PATH/java21"
+          elif [ -d "$VERSION_PATH/any" ]; then
+            CONNECTOR_PATH="$VERSION_PATH/any"
+          else
+            # Try to find any available platform
+            PLATFORM=$(ls "$VERSION_PATH" | head -n 1)
+            if [ -n "$PLATFORM" ]; then
+              CONNECTOR_PATH="$VERSION_PATH/$PLATFORM"
+            else
+              echo "Error: No platform folder found in $VERSION_PATH"
+              exit 1
+            fi
+          fi
+          
+          echo "Connector path: $CONNECTOR_PATH"
+          echo "connector_path=$CONNECTOR_PATH" >> $GITHUB_OUTPUT
+          
+          # Create output directory
+          OUTPUT_DIR="$GITHUB_WORKSPACE/generated-connector"
+          mkdir -p "$OUTPUT_DIR"
+          echo "output_dir=$OUTPUT_DIR" >> $GITHUB_OUTPUT
+          
+          # Run mi-module-gen tool
+          echo "Running: bal mi-module-gen -i $CONNECTOR_PATH -t $OUTPUT_DIR"
+          bal mi-module-gen -i "$CONNECTOR_PATH" -t "$OUTPUT_DIR"
+          
+          # List generated files
+          echo "Generated files:"
+          ls -la "$OUTPUT_DIR"
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "${{ env.GIT_USER_NAME }}"
+          git config --global user.email "${{ env.GIT_USER_EMAIL }}"
+          echo "Git identity configured"
+
+      - name: Clone target repository and prepare branch
+        id: prepare_branch
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          TARGET_REPO="${{ env.TARGET_ORG_INPUT }}/${{ env.TARGET_REPO_NAME_INPUT }}"
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          BRANCH_NAME="feature/generate-${CONNECTOR_NAME}-connector"
+          
+          echo "Target repository: $TARGET_REPO"
+          
+          # Clone target repository
+          echo "Cloning repository: $TARGET_REPO"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git" target-repo || {
+            echo "Failed to clone target repository. Make sure it exists and you have access."
+            exit 1
+          }
+          
+          cd target-repo
+          
+          # Check if main branch exists, if not create it
+          if ! git rev-parse --verify origin/main &>/dev/null; then
+            echo "Creating initial main branch"
+            git checkout --orphan main
+            git commit --allow-empty -m "chore: Initial commit"
+            git push -u origin main
+          else
+            git checkout main
+          fi
+          
+          # Check if feature branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists"
+            BRANCH_NAME="${BRANCH_NAME}-${TIMESTAMP}"
+            echo "Using unique branch name: $BRANCH_NAME"
+          fi
+          
+          # Create feature branch
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "target_repo=$TARGET_REPO" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Branch '$BRANCH_NAME' created"
+
+      - name: Copy generated files to target repository
+        run: |
+          cd target-repo
+          OUTPUT_DIR="${{ steps.generate.outputs.output_dir }}"
+          
+          # Create target directory if it doesn't exist
+          mkdir -p src/main/resources
+          
+          # List what's in the generated folder
+          echo "Contents of generated folder:"
+          ls -la "$OUTPUT_DIR/generated/"
+          
+          # Copy contents from the generated folder to src/main/resources
+          cp -rL "$OUTPUT_DIR/generated/"* src/main/resources/
+          
+          # Verify lib folder was copied
+          if [ -d "src/main/resources/lib" ]; then
+            echo "lib folder copied successfully"
+            ls -la src/main/resources/lib/
+          else
+            echo "lib folder not found after copy"
+          fi
+          
+          echo "Generated files copied to src/main/resources"
+
+      - name: Update pom.xml version
+        if: ${{ env.RELEASE_VERSION_INPUT != '' }}
+        working-directory: target-repo
+        run: |
+          VERSION="${{ env.RELEASE_VERSION_INPUT }}"
+          echo "Updating pom.xml version to: $VERSION"
+          
+          if [ -f "pom.xml" ]; then
+            # Update the version in pom.xml (first <version> tag after <artifactId>)
+            sed -i "0,/<version>[^<]*<\/version>/s/<version>[^<]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+            echo "pom.xml version updated to $VERSION"
+            
+            # Show the updated version
+            echo "Updated pom.xml version:"
+            grep -m1 "<version>" pom.xml
+          else
+            echo "pom.xml not found in target repository"
+          fi
+
+      - name: Commit changes
+        id: commit
+        working-directory: target-repo
+        run: |
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          
+          # Force add all files including lib (in case .gitignore excludes it)
+          git add -f .
+          
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "hasChanged=false" >> $GITHUB_OUTPUT
+            echo "No changes to commit"
+          else
+            # Build commit message using heredoc
+            cat > /tmp/commit_msg.txt << 'COMMIT_EOF'
+          feat: Generate MI connector from ballerinax/${CONNECTOR_NAME}
+          
+          This commit adds the generated MI connector including:
+          - Connector configuration and operations
+          - UI schema definitions
+          - Maven project configuration
+          
+          Generated using mi-module-gen tool
+          COMMIT_EOF
+            
+            # Replace placeholder and add dynamic content
+            sed -i "s/\${CONNECTOR_NAME}/${CONNECTOR_NAME}/g" /tmp/commit_msg.txt
+            echo "Source connector: ballerinax/${CONNECTOR_NAME}" >> /tmp/commit_msg.txt
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> /tmp/commit_msg.txt
+            echo "Timestamp: ${{ steps.prepare_branch.outputs.timestamp }}" >> /tmp/commit_msg.txt
+            
+            git commit -F /tmp/commit_msg.txt
+            echo "hasChanged=true" >> $GITHUB_OUTPUT
+            echo "Changes committed successfully"
+          fi
+
+      - name: Push branch
+        id: push
+        if: ${{ steps.commit.outputs.hasChanged == 'true' }}
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          git push -u origin "$BRANCH_NAME"
+          echo "Branch pushed to origin"
+
+      - name: Create Pull Request
+        id: create_pr
+        if: ${{ steps.commit.outputs.hasChanged == 'true' }}
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          TARGET_REPO="${{ steps.prepare_branch.outputs.target_repo }}"
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          VERSION="${{ env.RELEASE_VERSION_INPUT }}"
+          
+          # Build PR body using heredoc
+          cat > /tmp/pr_body.txt << 'PR_EOF'
+          ## Summary
+          
+          This PR adds the generated MI connector from **ballerinax/CONNECTOR_PLACEHOLDER**.
+          
+          ### Generated Content:
+          - Connector configuration and operations
+          - UI schema definitions for MI VS Code extension
+          - Maven project configuration
+          
+          ### Source Information:
+          - **Source Connector:** ballerinax/CONNECTOR_PLACEHOLDER
+          - **Generated Tool:** mi-module-gen
+          PR_EOF
+          
+          # Replace placeholder
+          sed -i "s/CONNECTOR_PLACEHOLDER/${CONNECTOR_NAME}/g" /tmp/pr_body.txt
+          
+          if [ -n "$VERSION" ]; then
+            echo "- **Version:** ${VERSION}" >> /tmp/pr_body.txt
+          fi
+          
+          cat >> /tmp/pr_body.txt << 'PR_EOF2'
+          
+          ### Next Steps:
+          1. Review the generated connector code
+          2. Test the connector operations
+          3. Update documentation if needed
+          4. Merge this PR
+          
+          ---
+          *This PR was automatically generated by the connector generation workflow.*
+          PR_EOF2
+          
+          echo "*Run ID: ${{ github.run_id }} | Triggered by: @${{ github.actor }}*" >> /tmp/pr_body.txt
+          
+          # Create PR
+          PR_URL=$(gh pr create \
+            --repo "$TARGET_REPO" \
+            --title "feat: Generate MI connector from ballerinax/${CONNECTOR_NAME}" \
+            --body-file /tmp/pr_body.txt \
+            --base main \
+            --head "$BRANCH_NAME")
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Pull Request created: $PR_URL"
+
+      - name: Output summary
+        if: always()
+        run: |
+          echo "## MI Connector Generation Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.commit.outputs.hasChanged }}" = "true" ]; then
+            echo "### Connector Generated Successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### No Changes Made" >> $GITHUB_STEP_SUMMARY
+            echo "The connector may already exist in the repository." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Source Connector** | ballerinax/${{ env.CONNECTOR_NAME_INPUT }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target Repository** | ${{ steps.prepare_branch.outputs.target_repo }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ steps.prepare_branch.outputs.branch_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Changes Committed** | ${{ steps.commit.outputs.hasChanged }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ env.RELEASE_VERSION_INPUT }}" ]; then
+            echo "| **Version** | ${{ env.RELEASE_VERSION_INPUT }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -n "${{ steps.create_pr.outputs.pr_url }}" ]; then
+            echo "| **Pull Request** | ${{ steps.create_pr.outputs.pr_url }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Workflow run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*" >> $GITHUB_STEP_SUMMARY
