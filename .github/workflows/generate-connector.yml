@@ -75,10 +75,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 21.0.3
+          java-version: 21
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -242,7 +242,7 @@ jobs:
           
           if [ -f "pom.xml" ]; then
             # Update the version in pom.xml (first <version> tag after <artifactId>)
-            sed -i "0,/<version>[^<]*<\/version>/s/<version>[^<]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+            sed -i "1,/<version>[^<]*<\/version>/s/<version>[^<]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
             echo "pom.xml version updated to $VERSION"
             
             # Show the updated version
