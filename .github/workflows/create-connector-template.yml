@@ -1,0 +1,332 @@
+name: Create MI Connector Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      connector_name:
+        description: 'Connector name (e.g., salesforce, slack, jira) - lowercase, alphanumeric with hyphens and dots only'
+        required: true
+        type: string
+      connector_display_name:
+        description: 'Connector display name (e.g., Salesforce, Slack, Jira)'
+        required: true
+        type: string
+      connector_description:
+        description: 'Brief description of the connector'
+        required: false
+        type: string
+      connector_category:
+        description: 'Connector category'
+        required: false
+        default: 'Developer Tools'
+        type: choice
+        options:
+          - Developer Tools
+          - CRM
+          - Communication
+          - Database
+          - Cloud Services
+          - Analytics
+          - Marketing
+          - Productivity
+          - Other
+      target_org:
+        description: 'Target GitHub organization'
+        required: true
+        default: 'wso2-extensions'
+        type: string
+      target_repo:
+        description: 'Target repository name'
+        required: true
+        type: string
+
+# Prevent concurrent runs for the same connector
+concurrency:
+  group: connector-skeleton-${{ github.event.inputs.connector_name }}
+  cancel-in-progress: false
+
+jobs:
+  create-skeleton:
+    runs-on: ubuntu-latest
+
+    env:
+      # Normalize inputs for workflow_dispatch
+      CONNECTOR_NAME_INPUT: ${{ github.event.inputs.connector_name }}
+      CONNECTOR_DISPLAY_NAME_INPUT: ${{ github.event.inputs.connector_display_name }}
+      CONNECTOR_DESCRIPTION_INPUT: ${{ github.event.inputs.connector_description }}
+      CONNECTOR_CATEGORY_INPUT: ${{ github.event.inputs.connector_category }}
+      TARGET_ORG_INPUT: ${{ github.event.inputs.target_org }}
+      TARGET_REPO_INPUT: ${{ github.event.inputs.target_repo }}
+      # Use secrets for authentication
+      GH_TOKEN: ${{ secrets.WSO2_INTEGRATION_BOT_TOKEN }}
+      GIT_USER_NAME: ${{ secrets.WSO2_INTEGRATION_BOT_USERNAME }}
+      GIT_USER_EMAIL: ${{ secrets.WSO2_INTEGRATION_BOT_EMAIL }}
+
+    steps:
+      - name: Checkout template repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          
+          # Validate connector name format (lowercase, alphanumeric, hyphens, and dots only)
+          if [[ ! "$CONNECTOR_NAME" =~ ^[a-z][a-z0-9.-]*[a-z0-9]$|^[a-z]$ ]]; then
+            echo "::error::Invalid connector name: '$CONNECTOR_NAME'. Must be lowercase, start with a letter, and contain only letters, numbers, hyphens, and dots."
+            exit 1
+          fi
+          
+          echo "Input validation passed"
+          echo "validated=true" >> $GITHUB_OUTPUT
+
+      - name: Set up variables
+        id: vars
+        run: |
+          CONNECTOR_NAME="${{ env.CONNECTOR_NAME_INPUT }}"
+          CONNECTOR_NAME_LOWER=$(echo "$CONNECTOR_NAME" | tr '[:upper:]' '[:lower:]')
+          CONNECTOR_NAME_CAPITALIZED=$(echo "$CONNECTOR_NAME" | sed 's/.*/\L&/; s/[a-z]*/\u&/g')
+          
+          REPO_NAME="${{ env.TARGET_REPO_INPUT }}"
+          BRANCH_NAME="feature/initial-skeleton"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          
+          echo "CONNECTOR_NAME=${CONNECTOR_NAME}" >> $GITHUB_OUTPUT
+          echo "CONNECTOR_NAME_LOWER=${CONNECTOR_NAME_LOWER}" >> $GITHUB_OUTPUT
+          echo "CONNECTOR_NAME_CAPITALIZED=${CONNECTOR_NAME_CAPITALIZED}" >> $GITHUB_OUTPUT
+          echo "REPO_NAME=${REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          echo "TARGET_ORG=${{ env.TARGET_ORG_INPUT }}" >> $GITHUB_OUTPUT
+          echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
+          
+          echo "Configuration Summary:"
+          echo "  - Connector Name: ${CONNECTOR_NAME_LOWER}"
+          echo "  - Display Name: ${{ env.CONNECTOR_DISPLAY_NAME_INPUT }}"
+          echo "  - Repository: ${{ env.TARGET_ORG_INPUT }}/${REPO_NAME}"
+          echo "  - Branch: ${BRANCH_NAME}"
+
+      - name: Copy connector template and replace placeholders
+        run: |
+          # Copy connector-template to skeleton-output
+          cp -r connector-template skeleton-output
+          
+          # Define placeholder values
+          CONNECTOR_NAME_LOWER="${{ steps.vars.outputs.CONNECTOR_NAME_LOWER }}"
+          CONNECTOR_DISPLAY_NAME="${{ env.CONNECTOR_DISPLAY_NAME_INPUT }}"
+          CONNECTOR_DESCRIPTION="${{ env.CONNECTOR_DESCRIPTION_INPUT }}"
+          TARGET_ORG="${{ steps.vars.outputs.TARGET_ORG }}"
+          CONNECTOR_CATEGORY="${{ env.CONNECTOR_CATEGORY_INPUT }}"
+          
+          # Replace placeholders in all files
+          find skeleton-output -type f \( -name "*.xml" -o -name "*.md" -o -name "*.json" -o -name "*.properties" -o -name "*.yml" -o -name "*.yaml" \) | while read file; do
+            sed -i "s/{{CONNECTOR_NAME_LOWER}}/${CONNECTOR_NAME_LOWER}/g" "$file"
+            sed -i "s/{{CONNECTOR_DISPLAY_NAME}}/${CONNECTOR_DISPLAY_NAME}/g" "$file"
+            sed -i "s/{{CONNECTOR_DESCRIPTION}}/${CONNECTOR_DESCRIPTION}/g" "$file"
+            sed -i "s/{{TARGET_ORG}}/${TARGET_ORG}/g" "$file"
+            sed -i "s/{{CONNECTOR_CATEGORY}}/${CONNECTOR_CATEGORY}/g" "$file"
+          done
+          
+          echo "Template files copied and placeholders replaced"
+
+      - name: Verify target repository exists
+        id: create_repo
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          REPO_FULL_NAME="${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }}"
+          
+          echo "Target repository: $REPO_FULL_NAME"
+          echo "repo_existed=true" >> $GITHUB_OUTPUT
+          echo "repo_created=false" >> $GITHUB_OUTPUT
+          echo "Using existing repository: $REPO_FULL_NAME"
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "${{ env.GIT_USER_NAME }}"
+          git config --global user.email "${{ env.GIT_USER_EMAIL }}"
+          echo "Git identity configured"
+
+      - name: Clone target repository and prepare branch
+        id: prepare_branch
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          REPO_FULL_NAME="${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }}"
+          BRANCH_NAME="${{ steps.vars.outputs.BRANCH_NAME }}"
+
+          echo "Cloning repository: $REPO_FULL_NAME"
+          gh repo clone "$REPO_FULL_NAME" target-repo
+          
+          cd target-repo
+          
+          # Configure git to use gh for authentication (avoids embedding tokens in URLs)
+          gh auth setup-git
+
+          # Check if main branch exists, if not create it
+          if ! git rev-parse --verify origin/main &>/dev/null; then
+            echo "Creating initial main branch"
+            git checkout --orphan main
+            git commit --allow-empty -m "chore: Initial commit"
+            git push -u origin main
+          else
+            git checkout main
+          fi
+          
+          # Check if feature branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists"
+            # Create a unique branch name with timestamp
+            BRANCH_NAME="${BRANCH_NAME}-${{ steps.vars.outputs.TIMESTAMP }}"
+            echo "Using unique branch name: $BRANCH_NAME"
+          fi
+          
+          # Create feature branch
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Branch '$BRANCH_NAME' created"
+
+      - name: Copy skeleton files to target repository
+        run: |
+          cd target-repo
+          
+          # Copy skeleton files (excluding .git)
+          cp -r ../skeleton-output/. .
+          
+          echo "Skeleton files copied"
+
+      - name: Commit changes
+        id: commit
+        working-directory: target-repo
+        run: |
+          # Add all changes
+          git add .
+          
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "hasChanged=false" >> $GITHUB_OUTPUT
+            echo "No changes to commit - skeleton may already exist"
+          else
+            # Build commit message
+            COMMIT_MSG="feat: Initialize ${{ env.CONNECTOR_DISPLAY_NAME_INPUT }} connector skeleton structure
+
+          This commit adds the initial project structure for the MI connector including:
+          - Maven project configuration (pom.xml)
+          - Assembly descriptor for connector packaging
+          - CI/CD workflows (build and release)
+          - Issue and PR templates
+          - Connector store metadata
+          
+          Generated by: connector-skeleton-workflow
+          Timestamp: ${{ steps.vars.outputs.TIMESTAMP }}"
+            
+            echo "$COMMIT_MSG" | git commit -F -
+            echo "hasChanged=true" >> $GITHUB_OUTPUT
+            echo "Changes committed successfully"
+          fi
+
+      - name: Push branch
+        id: push
+        if: ${{ steps.commit.outputs.hasChanged == 'true' }}
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          git push -u origin "$BRANCH_NAME"
+          echo "Branch pushed to origin"
+
+      - name: Create Pull Request
+        id: create_pr
+        if: ${{ steps.commit.outputs.hasChanged == 'true' }}
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          REPO_FULL_NAME="${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }}"
+          
+          # Create PR
+          PR_URL=$(gh pr create \
+            --repo "$REPO_FULL_NAME" \
+            --title "feat: Initialize ${{ env.CONNECTOR_DISPLAY_NAME_INPUT }} connector skeleton" \
+            --body "## Summary
+
+          This PR initializes the skeleton structure for the **${{ env.CONNECTOR_DISPLAY_NAME_INPUT }}** connector.
+
+          ### Files Created:
+          - \`pom.xml\` - Maven project configuration
+          - \`README.md\` - Project documentation
+          - \`LICENSE\` - Apache 2.0 License
+          - \`.gitignore\` - Git ignore rules
+          - \`issue_template.md\` - Issue template
+          - \`pull_request_template.md\` - PR template
+          - \`src/main/assembly/assemble-connector.xml\` - Assembly descriptor
+          - \`src/main/assembly/filter.properties\` - Filter properties
+          - \`.connector-store/meta.json\` - Connector metadata
+          - \`.connector-store/logo.png\` - Placeholder logo
+          - \`.github/workflows/pull_request_ubuntu_build.yml\` - CI workflow
+          - \`.github/workflows/publish-release.yml\` - Release workflow
+
+          ### Directory Structure:
+          \`\`\`
+          ${{ steps.vars.outputs.REPO_NAME }}/
+          ├── .connector-store/
+          │   ├── logo.png
+          │   └── meta.json
+          ├── .github/
+          │   └── workflows/
+          │       ├── publish-release.yml
+          │       └── pull_request_ubuntu_build.yml
+          ├── repository/
+          ├── src/
+          │   ├── main/
+          │   │   ├── assembly/
+          │   │   │   ├── assemble-connector.xml
+          │   │   │   └── filter.properties
+          │   │   ├── java/
+          │   │   └── resources/
+          │   └── test/
+          ├── .gitignore
+          ├── issue_template.md
+          ├── LICENSE
+          ├── pom.xml
+          ├── pull_request_template.md
+          └── README.md
+          \`\`\`
+
+          ### Next Steps:
+          1. Review and merge this PR
+          2. Add connector-specific operations in \`src/main/resources/\`
+          3. Implement Java classes in \`src/main/java/\` if needed
+          4. Update \`meta.json\` with operation details
+          5. Replace placeholder logo with actual connector logo
+
+          ---
+          *This PR was automatically generated by the connector skeleton workflow.*
+          *Run ID: ${{ github.run_id }} | Triggered by: @${{ github.actor }}*" \
+            --base main \
+            --head "$BRANCH_NAME")
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Pull Request created: $PR_URL"
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          rm -rf skeleton-output target-repo
+          echo "Cleanup completed"
+
+      - name: Output summary
+        if: always()
+        run: |
+          echo "## MI Connector Skeleton Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.commit.outputs.hasChanged }}" = "true" ]; then
+            echo "**${{ env.CONNECTOR_DISPLAY_NAME_INPUT }}** connector skeleton created successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Repository:** [${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }}](https://github.com/${{ steps.vars.outputs.TARGET_ORG }}/${{ steps.vars.outputs.REPO_NAME }})" >> $GITHUB_STEP_SUMMARY
+            echo "- **Pull Request:** ${{ steps.create_pr.outputs.pr_url }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No changes made - skeleton may already exist." >> $GITHUB_STEP_SUMMARY
+          fi
