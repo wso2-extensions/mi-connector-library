@@ -232,6 +232,7 @@ jobs:
           GH_TOKEN: ${{ env.GH_TOKEN }}
         run: |
           BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          gh auth setup-git
           git push -u origin "$BRANCH_NAME"
           echo "Branch pushed to origin"
 
