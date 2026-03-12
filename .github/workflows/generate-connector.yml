@@ -183,10 +183,11 @@ jobs:
           }
           
           cd target-repo
-          
-          # Configure git to use gh for authentication (avoids embedding tokens in URLs)
-          gh auth setup-git
-          
+
+          # Configure git to authenticate with GH_TOKEN
+          git config --local http.https://github.com/.extraheader \
+            "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64)"
+
           # Check if main branch exists, if not create it
           if ! git rev-parse --verify origin/main &>/dev/null; then
             echo "Creating initial main branch"
@@ -300,7 +301,8 @@ jobs:
           GH_TOKEN: ${{ env.GH_TOKEN }}
         run: |
           BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
-          gh auth setup-git
+          git config --local http.https://github.com/.extraheader \
+            "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64)"
           git push -u origin "$BRANCH_NAME"
           echo "Branch pushed to origin"
 
