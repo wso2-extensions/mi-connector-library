@@ -159,7 +159,8 @@ jobs:
           
           cd target-repo
 
-          # Configure git to authenticate with GH_TOKEN
+          # Configure git to authenticate with GH_TOKEN, overriding the runner's default credential helper
+          git config --local credential.helper ""
           git config --local http.https://github.com/.extraheader \
             "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64)"
 
@@ -233,6 +234,7 @@ jobs:
           GH_TOKEN: ${{ env.GH_TOKEN }}
         run: |
           BRANCH_NAME="${{ steps.prepare_branch.outputs.branch_name }}"
+          git config --local credential.helper ""
           git config --local http.https://github.com/.extraheader \
             "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64)"
           git push -u origin "$BRANCH_NAME"
