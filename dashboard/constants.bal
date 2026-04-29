@@ -25,6 +25,7 @@ const BRANCH_MAIN = "main";
 
 const GITHUB_RAW_URL = "https://raw.githubusercontent.com";
 const GITHUB_BADGE_URL = "https://img.shields.io/github";
+const BALLERINA_CENTRAL_URL = "https://central.ballerina.io";
 
 // Colors
 const BADGE_COLOR_GREEN = "30c955";
@@ -34,6 +35,8 @@ const BADGE_COLOR_GREEN = "30c955";
 const README_FILE = "../README.md";
 const CONNECTOR_LIST_JSON = "resources/connector_list.json";
 const CONNECTOR_META_FILE = ".connector-store/meta.json";
+const MIGEN_FILE = ".migen";
+const MANUAL_CHANGES_FILE = "docs/MANUAL_CHANGES.md";
 
 // Env variable Names
 const GITHUB_TOKEN_ENV = "GITHUB_TOKEN";
