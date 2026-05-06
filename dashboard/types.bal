@@ -49,6 +49,9 @@ type MIConnector record {|
     string defaultBranch;
     boolean archived;
     ConnectorMeta? meta;
+    boolean isGenerated = false;
+    boolean isManuallyModified = false;
+    string? ballerinaSource = ();
 |};
 
 
@@ -69,6 +72,7 @@ type WorkflowBadge record {|
 # + pullRequests - The pull requests badge
 type RepoBadges record {|
     WorkflowBadge release?;
+    WorkflowBadge build?;
     WorkflowBadge pullRequests?;
 |};
 

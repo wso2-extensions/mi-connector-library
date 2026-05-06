@@ -53,18 +53,47 @@ isolated function getRepoLink(MIConnector connector) returns string {
     return string `[${displayName}](${connector.htmlUrl})`;
 }
 
-# Generates a dashboard row for a connector
+# Gets the Ballerina Central link markdown for a generated connector
+#
+# + connector - MI Connector
+# + return - Markdown formatted link, or plain text if source is unknown
+isolated function getBallerinaSourceLink(MIConnector connector) returns string {
+    string? pkg = connector.ballerinaSource;
+    if pkg is () {
+        return "N/A";
+    }
+    return string `[${pkg}](${BALLERINA_CENTRAL_URL}/${pkg})`;
+}
+
+# Generates a dashboard row for a handwritten connector (4 columns)
 #
 # + connector - MI Connector
 # + return - Markdown table row or error
-function getDashboardRow(MIConnector connector) returns string|error {
+function getHandwrittenRow(MIConnector connector) returns string|error {
     RepoBadges badges = check getRepoBadges(connector);
-    
+
     string repoLink = getRepoLink(connector);
     string releaseBadge = getBadge(badges.release);
+    string buildBadge = getBadge(badges.build);
     string prBadge = getBadge(badges.pullRequests);
-    
-    return string `|${repoLink}|${releaseBadge}|${prBadge}|`;
+
+    return string `|${repoLink}|${releaseBadge}|${buildBadge}|${prBadge}|`;
+}
+
+# Generates a dashboard row for a generated connector (5 columns, includes Ballerina Source)
+#
+# + connector - MI Connector
+# + return - Markdown table row or error
+function getGeneratedRow(MIConnector connector) returns string|error {
+    RepoBadges badges = check getRepoBadges(connector);
+
+    string repoLink = getRepoLink(connector);
+    string ballerinaLink = getBallerinaSourceLink(connector);
+    string releaseBadge = getBadge(badges.release);
+    string buildBadge = getBadge(badges.build);
+    string prBadge = getBadge(badges.pullRequests);
+
+    return string `|${repoLink}|${ballerinaLink}|${releaseBadge}|${buildBadge}|${prBadge}|`;
 }
 
 # Sorts connectors by display name

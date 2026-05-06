@@ -48,20 +48,53 @@ public function main() returns error? {
 # + connectors - Array of MI connectors
 # + return - Dashboard markdown content or error
 function generateDashboard(MIConnector[] connectors) returns string|error {
+    MIConnector[] handwritten = connectors.filter(c => !c.isGenerated);
+    MIConnector[] generated = connectors.filter(c => c.isGenerated && !c.isManuallyModified);
+    MIConnector[] generatedModified = connectors.filter(c => c.isGenerated && c.isManuallyModified);
+
     string[] lines = [
-        "### WSO2 MI Connectors",
+        "### Handwritten Connectors",
         "",
-        "These connectors enable WSO2 Micro Integrator to connect with various external services and systems.",
+        "These connectors are fully handwritten and manually maintained.",
         "",
-        "| Name | Latest Version | Pull Requests |",
-        "|:---:|:---:|:---:|"
+        "| Name | Latest Version | Build | Pull Requests |",
+        "| --- | --- | --- | --- |"
     ];
-    
-    foreach MIConnector connector in connectors {
-        string row = check getDashboardRow(connector);
-        lines.push(row);
+
+    foreach MIConnector connector in handwritten {
+        lines.push(check getHandwrittenRow(connector));
     }
-    
+
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    lines.push("### Generated from Ballerina Connectors");
+    lines.push("");
+    lines.push("These connectors are derived from the [Ballerina connector library](https://github.com/ballerina-platform/ballerina-library). They are generated using tooling and may optionally include manual modifications to better fit the WSO2 MI connector model.");
+    lines.push("");
+    lines.push("#### Generated");
+    lines.push("");
+    lines.push("These connectors are **purely generated** from their corresponding Ballerina connector packages with no manual modifications.");
+    lines.push("");
+    lines.push("| Name | Ballerina Source | Latest Version | Build | Pull Requests |");
+    lines.push("| --- | --- | --- | --- | --- |");
+
+    foreach MIConnector connector in generated {
+        lines.push(check getGeneratedRow(connector));
+    }
+
+    lines.push("");
+    lines.push("#### Generated & Modified");
+    lines.push("");
+    lines.push("These connectors were initially generated from their corresponding Ballerina connector packages and have been **manually modified** to extend or adapt functionality for WSO2 MI.");
+    lines.push("");
+    lines.push("| Name | Ballerina Source | Latest Version | Build | Pull Requests |");
+    lines.push("| --- | --- | --- | --- | --- |");
+
+    foreach MIConnector connector in generatedModified {
+        lines.push(check getGeneratedRow(connector));
+    }
+
     return string:'join("\n", ...lines);
 }
 

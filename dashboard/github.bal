@@ -113,6 +113,39 @@ function isMIConnector(ConnectorMeta? meta) returns boolean {
     return meta.product == "MI";
 }
 
+# Checks whether a file exists in a repository on the default branch
+#
+# + repoFullName - Full repository name (org/repo)
+# + defaultBranch - Default branch of the repository
+# + filePath - Path to the file within the repository
+# + return - True if the file exists
+function checkFileExists(string repoFullName, string defaultBranch, string filePath) returns boolean {
+    string path = string `/${repoFullName}/${defaultBranch}/${filePath}`;
+    string|error result = rawGithubClient->get(path);
+    return result is string;
+}
+
+# Fetches the content of the .migen file from a repository and extracts the Ballerina source package
+#
+# + repoFullName - Full repository name (org/repo)
+# + defaultBranch - Default branch of the repository
+# + return - Ballerina source package (e.g. "ballerinax/salesforce"), or nil if not found
+function getMigenSource(string repoFullName, string defaultBranch) returns string? {
+    string path = string `/${repoFullName}/${defaultBranch}/${MIGEN_FILE}`;
+    string|error content = rawGithubClient->get(path);
+    if content is error {
+        return ();
+    }
+    string[] lines = re`\n`.split(content);
+    foreach string line in lines {
+        string trimmed = line.trim();
+        if trimmed.startsWith("Source: ") {
+            return trimmed.substring("Source: ".length());
+        }
+    }
+    return ();
+}
+
 # Fetches all MI connectors from the organization
 #
 # + return - Array of MI connectors or error
@@ -128,6 +161,10 @@ function fetchMIConnectors() returns MIConnector[]|error {
         
         if isMIConnector(meta) {
             log:printInfo(string `  Found MI connector: ${repo.name}`);
+            string? migenSource = getMigenSource(repo.full_name, repo.default_branch);
+            boolean isGenerated = migenSource != ();
+            boolean isManuallyModified = isGenerated &&
+                checkFileExists(repo.full_name, repo.default_branch, MANUAL_CHANGES_FILE);
             miConnectors.push({
                 name: repo.name,
                 fullName: repo.full_name,
@@ -135,7 +172,10 @@ function fetchMIConnectors() returns MIConnector[]|error {
                 description: repo.description ?: "",
                 defaultBranch: repo.default_branch,
                 archived: repo.archived,
-                meta: meta
+                meta: meta,
+                isGenerated: isGenerated,
+                isManuallyModified: isManuallyModified,
+                ballerinaSource: migenSource
             });
         }
     }
@@ -166,15 +206,23 @@ function getRepoBadges(MIConnector connector) returns RepoBadges|error {
         releaseBadge.badgeUrl = NA_BADGE;
     }
     
+    // Build status badge (uses combined checks status across all workflows)
+    WorkflowBadge buildBadge = {
+        name: "Build",
+        badgeUrl: string `${GITHUB_BADGE_URL}/checks-status/${fullName}/${defaultBranch}?label=`,
+        htmlUrl: string `${connector.htmlUrl}/actions`
+    };
+
     // Pull requests badge
     WorkflowBadge prBadge = {
         name: "Pull Requests",
         badgeUrl: string `${GITHUB_BADGE_URL}/issues-pr-raw/${fullName}.svg?label=`,
         htmlUrl: string `${connector.htmlUrl}/pulls`
     };
-    
+
     return {
         release: releaseBadge,
+        build: buildBadge,
         pullRequests: prBadge
     };
 }
